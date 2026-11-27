@@ -4,10 +4,11 @@ import { api } from '../api';
 
 interface SetupScreenProps {
   mode: 'setup' | 'unlock';
+  version?: string;
   onComplete: () => void;
 }
 
-export const SetupScreen: React.FC<SetupScreenProps> = ({ mode, onComplete }) => {
+export const SetupScreen: React.FC<SetupScreenProps> = ({ mode, version, onComplete }) => {
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -66,6 +67,11 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ mode, onComplete }) =>
               ? '首次启动 · 设置主加密密钥（Master Key）'
               : '数据库已加密保护 · 请输入主密钥解锁面板'}
           </p>
+          {version && (
+            <span className="mt-2 inline-block rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 font-mono text-[10px] text-zinc-400">
+              {version}
+            </span>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 p-6">

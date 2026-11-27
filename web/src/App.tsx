@@ -51,6 +51,7 @@ export default function App() {
     initialized: boolean;
     unlocked: boolean;
     authenticated: boolean;
+    version?: string;
   } | null>(null);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [savedKeys, setSavedKeys] = useState<SSHKey[]>([]);
@@ -319,8 +320,14 @@ export default function App() {
     return (
       <SetupScreen
         mode={!authState.initialized ? 'setup' : 'unlock'}
+        version={authState.version}
         onComplete={() => {
-          setAuthState({ initialized: true, unlocked: true, authenticated: true });
+          setAuthState({
+            initialized: true,
+            unlocked: true,
+            authenticated: true,
+            version: authState.version,
+          });
           fetchHosts();
           fetchKeys();
         }}
@@ -339,7 +346,14 @@ export default function App() {
               <Sparkles className="h-4 w-4 text-emerald-400" />
             </div>
             <div>
-              <div className="text-sm font-semibold tracking-tight text-zinc-100">VPSCoop</div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-semibold tracking-tight text-zinc-100">VPSCoop</span>
+                {authState.version && (
+                  <span className="rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+                    {authState.version}
+                  </span>
+                )}
+              </div>
               <div className="text-[10px] text-zinc-500">SSH · SCP · Vault</div>
             </div>
           </div>

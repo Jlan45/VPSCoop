@@ -68,8 +68,8 @@ jobs:
             local os=$1
             local arch=$2
             local ext=$3
-            echo "Building ${os}/${arch}..."
-            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -ldflags="-s -w" -o "dist/vpscoop-${os}-${arch}${ext}" .
+            echo "Building ${os}/${arch} (${GITHUB_REF_NAME})..."
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -ldflags="-s -w -X vpscoop/internal/version.Version=${GITHUB_REF_NAME}" -o "dist/vpscoop-${os}-${arch}${ext}" .
           }
           build_target linux amd64 ""
           build_target linux arm64 ""

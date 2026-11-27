@@ -32,6 +32,7 @@ import (
 	sshclient "vpscoop/internal/ssh"
 	"vpscoop/internal/store"
 	"vpscoop/internal/tailscale"
+	"vpscoop/internal/version"
 	"vpscoop/internal/webdav"
 )
 
@@ -205,7 +206,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"version": version.Version,
+	})
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
@@ -1395,10 +1399,11 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		initialized = (salt != "" && verifier != "") || crypto.HasLegacyKey(s.dataDir)
 	}
 	authenticated := unlocked && s.isAuthenticated(r)
-	writeJSON(w, http.StatusOK, map[string]bool{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"initialized":   initialized,
 		"unlocked":      unlocked,
 		"authenticated": authenticated,
+		"version":       version.Version,
 	})
 }
 

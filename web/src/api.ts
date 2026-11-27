@@ -20,7 +20,7 @@ const epParam = (endpointId?: string) =>
 
 export const api = {
   authStatus: () =>
-    request<{ initialized: boolean; unlocked: boolean; authenticated: boolean }>(
+    request<{ initialized: boolean; unlocked: boolean; authenticated: boolean; version?: string }>(
       '/api/auth/status'
     ),
 
