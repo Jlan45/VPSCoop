@@ -36,6 +36,8 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const dragCounterRef = useRef(0);
 
   // Preview/Edit modal state
   const [editingFile, setEditingFile] = useState<{
@@ -81,17 +83,20 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
 
   const handleUploadFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    const list = Array.from(files);
     setUploading(true);
     setError('');
     try {
-      for (const file of Array.from(files)) {
-        await api.scpUpload(host.id, currentPath, file, endpointId);
+      for (let i = 0; i < list.length; i++) {
+        setUploadStatus(`正在上传 (${i + 1}/${list.length}): ${list[i].name}`);
+        await api.scpUpload(host.id, currentPath, list[i], endpointId);
       }
       await loadDir(currentPath);
     } catch (err: any) {
       setError(err?.message || 'SCP 上传失败');
     } finally {
       setUploading(false);
+      setUploadStatus('');
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -164,13 +169,29 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
   return (
     <div
       className="relative flex h-full flex-col bg-[#09090b]"
-      onDragOver={(e) => {
+      onDragEnter={(e) => {
         e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current += 1;
         setDragOver(true);
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current -= 1;
+        if (dragCounterRef.current <= 0) {
+          dragCounterRef.current = 0;
+          setDragOver(false);
+        }
+      }}
       onDrop={(e) => {
         e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current = 0;
         setDragOver(false);
         handleUploadFiles(e.dataTransfer.files);
       }}
@@ -254,7 +275,7 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
             className="inline-flex items-center gap-1.5 rounded-md bg-sky-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-sky-400 disabled:opacity-50"
           >
             <Upload className="h-3.5 w-3.5" />
-            {uploading ? 'SCP 上传中...' : 'SCP 上传'}
+            {uploading ? uploadStatus || 'SCP 上传中...' : 'SCP 上传（支持拖拽）'}
           </button>
 
           <button
@@ -409,6 +430,19 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Visible Drag & Drop Upload Strip */}
+        <div
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/[0.1] bg-white/[0.02] px-4 py-3 text-xs text-zinc-400 transition hover:border-sky-400/50 hover:bg-sky-500/5 hover:text-zinc-200"
+        >
+          <Upload className="h-3.5 w-3.5 text-sky-400" />
+          <span>
+            {uploading
+              ? uploadStatus || '正在通过 SCP 上传...'
+              : `拖拽本地文件到页面任意位置，或点击此处通过 SCP 上传至 ${currentPath}`}
+          </span>
         </div>
       </div>
 

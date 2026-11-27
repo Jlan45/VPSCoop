@@ -31,6 +31,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ open, host, onClose 
   const [billedAt, setBilledAt] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const loadInvoices = useCallback(async () => {
@@ -191,10 +192,27 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ open, host, onClose 
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-white/[0.15] bg-white/[0.02] px-3 py-2 text-xs text-zinc-300 transition hover:border-sky-400/50 hover:bg-sky-500/5">
+              <label
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) setSelectedFile(f);
+                }}
+                className={`inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-xs transition ${
+                  dragOver
+                    ? 'border-sky-400 bg-sky-500/15 text-sky-200'
+                    : 'border-white/[0.15] bg-white/[0.02] text-zinc-300 hover:border-sky-400/50 hover:bg-sky-500/5'
+                }`}
+              >
                 <Upload className="h-3.5 w-3.5 text-sky-400" />
                 <span className="max-w-[260px] truncate">
-                  {selectedFile ? selectedFile.name : '选择 PDF / 图片 / 账单文件'}
+                  {selectedFile ? selectedFile.name : '拖拽或点击选择 PDF / 图片 / 账单文件'}
                 </span>
                 <input
                   ref={fileRef}

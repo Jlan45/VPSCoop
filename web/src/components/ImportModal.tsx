@@ -148,11 +148,16 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             <textarea
               rows={9}
               value={content}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={async (e) => {
+                e.preventDefault();
+                await handleFile(e.dataTransfer.files?.[0]);
+              }}
               onChange={(e) => {
                 setContent(e.target.value);
                 setSummary(null);
               }}
-              placeholder={`Host la-cn2\n  HostName 192.0.2.10\n  User root\n  Port 22\n\n或粘贴 CSV / JSON 内容...`}
+              placeholder={`Host la-cn2\n  HostName 192.0.2.10\n  User root\n  Port 22\n\n或直接拖拽 ~/.ssh/config、CSV、JSON 文件到此处...`}
               className="w-full rounded-xl border border-white/[0.08] bg-[#09090b] p-3 font-mono text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-emerald-500/60"
             />
           </div>
