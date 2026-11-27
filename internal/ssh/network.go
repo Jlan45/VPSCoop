@@ -73,15 +73,15 @@ trace_target() {
     echo "===ROUTE:$LABEL:$IP==="
     ping -4 -c 2 -W 1 "$IP" 2>/dev/null | tail -n 2 || true
     if command -v traceroute >/dev/null 2>&1; then
-      traceroute -n -m 16 -w 1 -q 1 "$IP" 2>/dev/null || true
+      traceroute -n -m 24 -w 1 -q 1 "$IP" 2>/dev/null || true
     elif command -v tracepath >/dev/null 2>&1; then
-      tracepath -n -m 16 "$IP" 2>/dev/null || true
+      tracepath -n -m 24 "$IP" 2>/dev/null || true
     else
-      for ttl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+      for ttl in $(seq 1 24); do
         ping -4 -n -c 1 -W 1 -t "$ttl" "$IP" 2>/dev/null | grep -E "From |from " > "${OUT}_$ttl" &
       done
       wait
-      for ttl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+      for ttl in $(seq 1 24); do
         cat "${OUT}_$ttl" 2>/dev/null || true
         rm -f "${OUT}_$ttl"
       done
@@ -222,7 +222,7 @@ func classifyRoute(carrier string, hops []string) string {
 			has20297 = true
 		case strings.HasPrefix(ip, "218.105.") || strings.HasPrefix(ip, "210.51."):
 			has9929 = true
-		case strings.HasPrefix(ip, "219.158."):
+		case strings.HasPrefix(ip, "219.158.") || strings.HasPrefix(ip, "210.22.") || strings.HasPrefix(ip, "139.226.") || strings.HasPrefix(ip, "112.64."):
 			has4837 = true
 		case strings.HasPrefix(ip, "223.120."):
 			hasCMIN2 = true
