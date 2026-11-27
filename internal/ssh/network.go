@@ -74,6 +74,10 @@ trace_target() {
     traceroute -n -m 16 -w 1 -q 1 "$IP" 2>/dev/null || true
   elif command -v tracepath >/dev/null 2>&1; then
     tracepath -n -m 16 "$IP" 2>/dev/null || true
+  else
+    for ttl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+      ping -4 -n -c 1 -W 1 -t "$ttl" "$IP" 2>/dev/null | grep -E "From |from " || true
+    done
   fi
 }
 
@@ -245,4 +249,39 @@ func classifyRoute(carrier string, hops []string) string {
 		return "未检测到跳数 (无 traceroute/tracepath)"
 	}
 	return "普通直连 / 国际路由"
+}
+
+// BuildRouteTags extracts concise, searchable tags from a NetworkReport.
+func BuildRouteTags(rep NetworkReport) []string {
+	var tags []string
+	seen := map[string]bool{}
+	add := func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			tags = append(tags, t)
+		}
+	}
+
+	if rep.IPv6 != "" {
+		add("IPv6")
+	}
+	for _, r := range rep.Routes {
+		switch r.LineType {
+		case "电信 CN2 GIA":
+			add("CN2-GIA")
+		case "电信 CN2 GT":
+			add("CN2-GT")
+		case "电信 163 骨干网":
+			add("163")
+		case "联通 AS9929":
+			add("AS9929")
+		case "联通 AS4837":
+			add("AS4837")
+		case "移动 CMI / CMIN2":
+			add("CMIN2")
+		case "移动 CMNET":
+			add("CMNET")
+		}
+	}
+	return tags
 }

@@ -843,3 +843,34 @@ func (s *Store) UpdateHostRegion(id, region string) error {
 	_, err := s.db.Exec(`UPDATE hosts SET region = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(region), now, id)
 	return err
 }
+
+// MergeHostTags appends newTags into a host's tags without duplicates.
+func (s *Store) MergeHostTags(id string, newTags []string) ([]string, error) {
+	if len(newTags) == 0 {
+		return nil, nil
+	}
+	h, err := s.GetHostWithSecrets(id)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	merged := make([]string, 0, len(h.Tags)+len(newTags))
+	for _, t := range h.Tags {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			merged = append(merged, t)
+		}
+	}
+	for _, t := range newTags {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			merged = append(merged, t)
+		}
+	}
+	b, _ := json.Marshal(merged)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.Exec(`UPDATE hosts SET tags_json = ?, updated_at = ? WHERE id = ?`, string(b), now, id); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}

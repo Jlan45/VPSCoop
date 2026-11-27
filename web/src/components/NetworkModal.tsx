@@ -26,9 +26,7 @@ export const NetworkModal: React.FC<NetworkModalProps> = ({
     try {
       const res = await api.networkTest(targetHost.id);
       setReport(res);
-      if (!targetHost.region && res.country) {
-        await onUpdated();
-      }
+      await onUpdated();
     } catch (err: any) {
       setError(err?.message || '网络探测失败');
     } finally {

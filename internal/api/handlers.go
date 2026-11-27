@@ -1634,5 +1634,11 @@ func (s *Server) handleNetworkTest(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpdateHostRegion(id, loc)
 	}
 
+	// Auto-merge detected route/IPv6 tags into host tags
+	routeTags := sshclient.BuildRouteTags(rep)
+	if len(routeTags) > 0 {
+		_, _ = s.store.MergeHostTags(id, routeTags)
+	}
+
 	writeJSON(w, http.StatusOK, rep)
 }
