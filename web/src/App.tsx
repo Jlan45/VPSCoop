@@ -71,6 +71,32 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [mcpCopied, setMcpCopied] = useState(false);
+
+  const handleQuickCopyMcp = async () => {
+    try {
+      const res = await api.getMCPToken();
+      const snippet = JSON.stringify(
+        {
+          mcpServers: {
+            vpscoop: {
+              url: `${window.location.origin}/mcp`,
+              headers: {
+                Authorization: `Bearer ${res.token}`,
+              },
+            },
+          },
+        },
+        null,
+        2
+      );
+      await navigator.clipboard.writeText(snippet);
+      setMcpCopied(true);
+      window.setTimeout(() => setMcpCopied(false), 1800);
+    } catch {
+      setMcpOpen(true);
+    }
+  };
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = window.localStorage.getItem('vpscoop-theme');
@@ -479,62 +505,93 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top Tab Bar (Termius-style) */}
-        <header className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-white/[0.08] bg-[#0c0c0f] px-3">
-          <button
-            type="button"
-            onClick={() => setActiveTabId('main')}
-            className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-              activeTabId === 'main'
-                ? 'bg-white/[0.08] text-zinc-100'
-                : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
-            }`}
-          >
-            {section === 'hosts' ? (
-              <>
-                <Server className="h-3.5 w-3.5 text-emerald-400" />
-                <span>主机库</span>
-              </>
-            ) : section === 'keys' ? (
-              <>
-                <KeyRound className="h-3.5 w-3.5 text-violet-400" />
-                <span>密钥管理</span>
-              </>
-            ) : (
-              <>
-                <CreditCard className="h-3.5 w-3.5 text-sky-400" />
-                <span>账单与到期</span>
-              </>
-            )}
-          </button>
+        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-white/[0.08] bg-[#0c0c0f] px-3">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTabId('main')}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                activeTabId === 'main'
+                  ? 'bg-white/[0.08] text-zinc-100'
+                  : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+              }`}
+            >
+              {section === 'hosts' ? (
+                <>
+                  <Server className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>主机库</span>
+                </>
+              ) : section === 'keys' ? (
+                <>
+                  <KeyRound className="h-3.5 w-3.5 text-violet-400" />
+                  <span>密钥管理</span>
+                </>
+              ) : (
+                <>
+                  <CreditCard className="h-3.5 w-3.5 text-sky-400" />
+                  <span>账单与到期</span>
+                </>
+              )}
+            </button>
 
-          {tabs.map((tab) => {
-            const isActive = activeTabId === tab.id;
-            return (
-              <div
-                key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
-                className={`group inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition ${
-                  isActive
-                    ? 'border-white/[0.1] bg-[#16161b] text-zinc-100'
-                    : 'border-transparent text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
-                }`}
-              >
-                {tab.kind === 'ssh' ? (
-                  <TerminalIcon className="h-3.5 w-3.5 text-emerald-400" />
-                ) : (
-                  <FolderOpen className="h-3.5 w-3.5 text-sky-400" />
-                )}
-                <span className="max-w-[140px] truncate font-medium">{tab.title}</span>
-                <button
-                  type="button"
-                  onClick={(e) => closeTab(tab.id, e)}
-                  className="rounded p-0.5 text-zinc-500 hover:bg-white/[0.1] hover:text-zinc-200"
+            {tabs.map((tab) => {
+              const isActive = activeTabId === tab.id;
+              return (
+                <div
+                  key={tab.id}
+                  onClick={() => setActiveTabId(tab.id)}
+                  className={`group inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition ${
+                    isActive
+                      ? 'border-white/[0.1] bg-[#16161b] text-zinc-100'
+                      : 'border-transparent text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                  }`}
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
+                  {tab.kind === 'ssh' ? (
+                    <TerminalIcon className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <FolderOpen className="h-3.5 w-3.5 text-sky-400" />
+                  )}
+                  <span className="max-w-[140px] truncate font-medium">{tab.title}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => closeTab(tab.id, e)}
+                    className="rounded p-0.5 text-zinc-500 hover:bg-white/[0.1] hover:text-zinc-200"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={handleQuickCopyMcp}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-300 transition hover:bg-sky-500/20"
+              title="一键复制随机派生的 HTTP MCP 接入配置"
+            >
+              {mcpCopied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-emerald-300">已复制 MCP 配置</span>
+                </>
+              ) : (
+                <>
+                  <Bot className="h-3.5 w-3.5" />
+                  <span>接入 MCP</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMcpOpen(true)}
+              className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-400 transition hover:bg-white/[0.08] hover:text-zinc-200"
+              title="查看或重置 MCP Token"
+            >
+              详情
+            </button>
+          </div>
         </header>
 
         {/* Workspace Viewport */}
