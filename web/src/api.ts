@@ -74,7 +74,7 @@ export const api = {
     request<{ ok: boolean }>(`/api/hosts/${id}`, { method: 'DELETE' }),
 
   testHost: (id: string, endpointId?: string) =>
-    request<{ ok: boolean; latencyMs: number }>(
+    request<{ ok: boolean; latencyMs: number; specs?: string }>(
       `/api/hosts/${id}/test${endpointId ? `?endpointId=${encodeURIComponent(endpointId)}` : ''}`,
       { method: 'POST' }
     ),

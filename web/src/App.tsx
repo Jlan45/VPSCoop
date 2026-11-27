@@ -277,6 +277,11 @@ export default function App() {
         ...prev,
         [host.id]: { ok: true, msg: `${res.latencyMs} ms` },
       }));
+      if (res.specs && !host.specs) {
+        setHosts((prev) =>
+          prev.map((item) => (item.id === host.id ? { ...item, specs: res.specs! } : item))
+        );
+      }
     } catch (err: any) {
       setTestResult((prev) => ({
         ...prev,

@@ -294,9 +294,19 @@ func (s *Server) handleTestHost(w http.ResponseWriter, r *http.Request) {
 	latency := time.Since(start).Milliseconds()
 	s.store.TouchLastConnected(id)
 
+	finalSpecs := host.Specs
+	if strings.TrimSpace(host.Specs) == "" || r.URL.Query().Get("refreshSpecs") == "1" {
+		if probed := sshclient.ProbeSpecs(client); probed != "" {
+			if err := s.store.UpdateHostSpecs(id, probed); err == nil {
+				finalSpecs = probed
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":        true,
 		"latencyMs": latency,
+		"specs":     finalSpecs,
 	})
 }
 

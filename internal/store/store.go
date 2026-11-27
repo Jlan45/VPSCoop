@@ -829,3 +829,10 @@ func (s *Store) WriteMasterMeta(salt, verifier string) error {
 	)
 	return err
 }
+
+// UpdateHostSpecs updates the specs column for a host.
+func (s *Store) UpdateHostSpecs(id, specs string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(`UPDATE hosts SET specs = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(specs), now, id)
+	return err
+}

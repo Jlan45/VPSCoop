@@ -266,3 +266,74 @@ func HandleTerminalWS(w http.ResponseWriter, r *http.Request, host store.HostWit
 	<-done
 	sendText("\r\n\x1b[38;5;244m[SSH session closed]\x1b[0m\r\n")
 }
+
+// ProbeSpecs runs a lightweight read-only command over an open SSH client to detect CPU, RAM, Disk, and OS.
+func ProbeSpecs(client *ssh.Client) string {
+	sess, err := client.NewSession()
+	if err != nil {
+		return ""
+	}
+	defer sess.Close()
+
+	var out strings.Builder
+	sess.Stdout = &out
+
+	const cmd = `CPU=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || true); ` +
+		`MEM=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}'); ` +
+		`DISK=$(df -k / 2>/dev/null | awk 'NR==2{printf "%d", $2/1048576}'); ` +
+		`OS=$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"'); ` +
+		`ARCH=$(uname -m 2>/dev/null); ` +
+		`echo "CPU=$CPU|MEM=$MEM|DISK=$DISK|OS=$OS|ARCH=$ARCH"`
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sess.Run(cmd)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return ""
+		}
+	case <-time.After(5 * time.Second):
+		_ = sess.Close()
+		return ""
+	}
+
+	kv := map[string]string{}
+	for _, part := range strings.Split(strings.TrimSpace(out.String()), "|") {
+		if k, v, ok := strings.Cut(part, "="); ok {
+			kv[k] = strings.TrimSpace(v)
+		}
+	}
+
+	var parts []string
+	if cpu, err := strconv.Atoi(kv["CPU"]); err == nil && cpu > 0 {
+		parts = append(parts, fmt.Sprintf("%d vCPU", cpu))
+	}
+	if memMB, err := strconv.Atoi(kv["MEM"]); err == nil && memMB > 0 {
+		if memMB >= 1024 {
+			gb := float64(memMB) / 1024.0
+			if gb >= 10 {
+				parts = append(parts, fmt.Sprintf("%.0fGB RAM", gb))
+			} else {
+				parts = append(parts, fmt.Sprintf("%.1fGB RAM", gb))
+			}
+		} else {
+			parts = append(parts, fmt.Sprintf("%dMB RAM", memMB))
+		}
+	}
+	if diskGB, err := strconv.Atoi(kv["DISK"]); err == nil && diskGB > 0 {
+		parts = append(parts, fmt.Sprintf("%dGB Disk", diskGB))
+	}
+	if osName := kv["OS"]; osName != "" {
+		if arch := kv["ARCH"]; arch != "" {
+			parts = append(parts, fmt.Sprintf("%s (%s)", osName, arch))
+		} else {
+			parts = append(parts, osName)
+		}
+	} else if arch := kv["ARCH"]; arch != "" {
+		parts = append(parts, arch)
+	}
+	return strings.Join(parts, " · ")
+}
