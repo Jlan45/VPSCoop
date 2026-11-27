@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
+
+@layer base {
+  :root {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color-scheme: dark;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.xterm {
+  height: 100%;
+  padding: 12px 14px;
+}
+
+.xterm-viewport {
+  overflow-y: auto !important;
+}
+
+/* Light Theme (beautifului.dev crisp zinc-light palette) */
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background-color: #f4f4f5;
+  color: #18181b;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16);
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+html.light .bg-\[\#09090b\] {
+  background-color: #f4f4f5 !important;
+}
+
+html.light .bg-\[\#0c0c0f\],
+html.light .bg-\[\#0e0e11\],
+html.light .bg-\[\#0b0b0e\],
+html.light .bg-\[\#0d0d10\],
+html.light .bg-\[\#111114\],
+html.light .bg-\[\#101014\],
+html.light .bg-\[\#101013\],
+html.light .bg-\[\#16161b\],
+html.light .hover\:bg-\[\#141418\]:hover {
+  background-color: #ffffff !important;
+}
+
+html.light .bg-zinc-900\/80,
+html.light .bg-zinc-900\/70,
+html.light .bg-zinc-900\/90,
+html.light .bg-zinc-900\/60,
+html.light .bg-zinc-900\/40,
+html.light .bg-zinc-950\/60,
+html.light .bg-zinc-950\/50,
+html.light .bg-zinc-800\/80,
+html.light .bg-zinc-800 {
+  background-color: #f4f4f5 !important;
+}
+
+html.light .text-zinc-100,
+html.light .text-zinc-200 {
+  color: #18181b !important;
+}
+html.light .text-zinc-300 {
+  color: #3f3f46 !important;
+}
+html.light .text-zinc-400 {
+  color: #52525b !important;
+}
+html.light .text-zinc-500 {
+  color: #71717a !important;
+}
+
+html.light .border-white\/\[0\.08\],
+html.light .border-white\/\[0\.1\],
+html.light .border-white\/\[0\.06\],
+html.light .border-white\/\[0\.05\],
+html.light .border-white\/\[0\.15\],
+html.light .divide-white\/\[0\.05\] > :not(:last-child),
+html.light .divide-white\/\[0\.06\] > :not(:last-child) {
+  border-color: rgba(0, 0, 0, 0.09) !important;
+}
+
+html.light .hover\:border-white\/\[0\.16\]:hover,
+html.light .hover\:border-white\/\[0\.15\]:hover {
+  border-color: rgba(0, 0, 0, 0.2) !important;
+}
+
+html.light .bg-white\/\[0\.02\],
+html.light .bg-white\/\[0\.03\],
+html.light .bg-white\/\[0\.04\] {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+}
+
+html.light .bg-white\/\[0\.08\],
+html.light .bg-white\/\[0\.1\],
+html.light .hover\:bg-white\/\[0\.04\]:hover,
+html.light .hover\:bg-white\/\[0\.05\]:hover,
+html.light .hover\:bg-white\/\[0\.06\]:hover,
+html.light .hover\:bg-white\/\[0\.07\]:hover,
+html.light .hover\:bg-white\/\[0\.08\]:hover {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+html.light .text-emerald-300 {
+  color: #047857 !important;
+}
+html.light .text-sky-300 {
+  color: #0369a1 !important;
+}
+html.light .text-amber-300,
+html.light .text-amber-200 {
+  color: #b45309 !important;
+}
+html.light .text-violet-300 {
+  color: #6d28d9 !important;
+}
+html.light .text-red-300,
+html.light .text-red-200 {
+  color: #b91c1c !important;
+}

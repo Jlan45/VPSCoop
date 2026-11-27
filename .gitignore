@@ -1,0 +1,7 @@
+vpscoop
+data/
+*.db
+.vpscoop.key
+web/node_modules/
+web/dist/
+*.vpscoop
