@@ -30,6 +30,17 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+func resolveRemoteExpr(p string) string {
+	trimmed := strings.TrimSpace(p)
+	if trimmed == "" || trimmed == "~" {
+		return `"$HOME"`
+	}
+	if strings.HasPrefix(trimmed, "~/") {
+		return `"$HOME/"` + shellQuote(strings.TrimPrefix(trimmed, "~/"))
+	}
+	return shellQuote(trimmed)
+}
+
 func runCommand(client *ssh.Client, cmd string) (string, string, error) {
 	session, err := client.NewSession()
 	if err != nil {
@@ -179,7 +190,7 @@ func Download(client *ssh.Client, remotePath string, w io.Writer) (string, int64
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
 
-	if err := session.Start("scp -f " + shellQuote(remotePath)); err != nil {
+	if err := session.Start("scp -f " + resolveRemoteExpr(remotePath)); err != nil {
 		return "", 0, err
 	}
 
@@ -291,7 +302,7 @@ func Upload(client *ssh.Client, remoteDir, filename string, size int64, r io.Rea
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
 
-	if err := session.Start("scp -t " + shellQuote(remoteDir)); err != nil {
+	if err := session.Start("scp -t -d " + resolveRemoteExpr(remoteDir)); err != nil {
 		return err
 	}
 
@@ -324,7 +335,7 @@ func Upload(client *ssh.Client, remoteDir, filename string, size int64, r io.Rea
 
 // Mkdir creates a directory on the remote host.
 func Mkdir(client *ssh.Client, remotePath string) error {
-	_, stderr, err := runCommand(client, "mkdir -p "+shellQuote(remotePath))
+	_, stderr, err := runCommand(client, "mkdir -p "+resolveRemoteExpr(remotePath))
 	if err != nil {
 		return fmt.Errorf("mkdir: %s", strings.TrimSpace(stderr))
 	}
@@ -333,7 +344,7 @@ func Mkdir(client *ssh.Client, remotePath string) error {
 
 // Rename moves or renames a file or directory on the remote host.
 func Rename(client *ssh.Client, oldPath, newPath string) error {
-	_, stderr, err := runCommand(client, "mv "+shellQuote(oldPath)+" "+shellQuote(newPath))
+	_, stderr, err := runCommand(client, "mv "+resolveRemoteExpr(oldPath)+" "+resolveRemoteExpr(newPath))
 	if err != nil {
 		return fmt.Errorf("rename: %s", strings.TrimSpace(stderr))
 	}
