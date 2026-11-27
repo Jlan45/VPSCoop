@@ -2,8 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { RotateCw, Trash2, FolderOpen } from 'lucide-react';
+import {
+  RotateCw,
+  Trash2,
+  FolderOpen,
+  Upload,
+  PanelRightClose,
+  CheckCircle2,
+  X,
+} from 'lucide-react';
+import { api } from '../api';
 import type { Host } from '../types';
+import { ScpFileManager } from './ScpFileManager';
 
 interface TerminalViewProps {
   host: Host;
@@ -11,7 +21,7 @@ interface TerminalViewProps {
   endpointLabel?: string;
   active: boolean;
   themeMode?: 'dark' | 'light';
-  onOpenScp: (host: Host) => void;
+  onOpenScp?: (host: Host) => void;
 }
 
 const DARK_TERM_THEME = {
@@ -68,14 +78,20 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   endpointLabel,
   active,
   themeMode = 'dark',
-  onOpenScp,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const cwdRef = useRef<string>('~');
+  const dragCounterRef = useRef(0);
+
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [connectSeq, setConnectSeq] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [detectedCwd, setDetectedCwd] = useState('~');
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -96,6 +112,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     term.loadAddon(webLinksAddon);
     term.open(el);
     fitAddon.fit();
+
+    // Track OSC 7 working directory reports if emitted by the remote shell
+    const oscDisp = term.parser.registerOscHandler(7, (data) => {
+      try {
+        const u = new URL(data);
+        if (u.protocol === 'file:' && u.pathname) {
+          const decoded = decodeURIComponent(u.pathname);
+          cwdRef.current = decoded;
+          setDetectedCwd(decoded);
+        }
+      } catch {
+        // ignore malformed OSC 7
+      }
+      return true;
+    });
 
     termRef.current = term;
     fitRef.current = fitAddon;
@@ -160,6 +191,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     return () => {
       window.clearInterval(pingInterval);
       resizeObserver.disconnect();
+      oscDisp.dispose();
       dataDisp.dispose();
       ws.close();
       term.dispose();
@@ -183,7 +215,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       }, 40);
       return () => window.clearTimeout(timer);
     }
-  }, [active]);
+  }, [active, drawerOpen]);
 
   useEffect(() => {
     if (termRef.current) {
@@ -191,6 +223,31 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         themeMode === 'light' ? LIGHT_TERM_THEME : DARK_TERM_THEME;
     }
   }, [themeMode]);
+
+  const handleTerminalDrop = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const list = Array.from(files);
+    const targetDir = cwdRef.current || '~';
+    try {
+      for (let i = 0; i < list.length; i++) {
+        setUploadNotice({
+          ok: true,
+          text: `正在通过 SCP 上传 (${i + 1}/${list.length}) ${list[i].name} → ${targetDir} ...`,
+        });
+        await api.scpUpload(host.id, targetDir, list[i], endpointId);
+      }
+      setUploadNotice({
+        ok: true,
+        text: `已上传 ${list.length} 个文件到 ${targetDir}`,
+      });
+      window.setTimeout(() => setUploadNotice(null), 4000);
+    } catch (err: any) {
+      setUploadNotice({
+        ok: false,
+        text: err?.message || 'SCP 上传失败',
+      });
+    }
+  };
 
   const statusBadge = {
     connecting: { dot: 'bg-amber-400 animate-pulse', text: '连接中...' },
@@ -225,11 +282,20 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => onOpenScp(host)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-white/[0.08]"
+            onClick={() => setDrawerOpen((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition ${
+              drawerOpen
+                ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
+                : 'border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:bg-white/[0.08]'
+            }`}
+            title="在右侧展开/收起 SCP 文件管理面板"
           >
-            <FolderOpen className="h-3.5 w-3.5 text-sky-400" />
-            SCP 文件
+            {drawerOpen ? (
+              <PanelRightClose className="h-3.5 w-3.5 text-sky-400" />
+            ) : (
+              <FolderOpen className="h-3.5 w-3.5 text-sky-400" />
+            )}
+            SCP 侧栏
           </button>
           <button
             type="button"
@@ -252,8 +318,78 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         </div>
       </div>
 
-      {/* xterm Mount */}
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden" />
+      {/* Main Split Area: Terminal + Optional Right SCP Drawer */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Terminal with Drag & Drop Upload */}
+        <div
+          className="relative min-w-0 flex-1 overflow-hidden"
+          onDragEnter={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounterRef.current += 1;
+            setDragOver(true);
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounterRef.current -= 1;
+            if (dragCounterRef.current <= 0) {
+              dragCounterRef.current = 0;
+              setDragOver(false);
+            }
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounterRef.current = 0;
+            setDragOver(false);
+            handleTerminalDrop(e.dataTransfer.files);
+          }}
+        >
+          <div ref={containerRef} className="h-full w-full" />
+
+          {uploadNotice && (
+            <div
+              className={`absolute right-4 top-3 z-20 flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs shadow-xl backdrop-blur-sm ${
+                uploadNotice.ok
+                  ? 'border-emerald-500/30 bg-zinc-950/90 text-emerald-300'
+                  : 'border-red-500/30 bg-zinc-950/90 text-red-300'
+              }`}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              <span>{uploadNotice.text}</span>
+              <button type="button" onClick={() => setUploadNotice(null)}>
+                <X className="h-3 w-3 opacity-70 hover:opacity-100" />
+              </button>
+            </div>
+          )}
+
+          {dragOver && (
+            <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-emerald-400/70 bg-emerald-500/10 backdrop-blur-xs">
+              <div className="rounded-xl bg-zinc-950/90 px-6 py-4 text-center shadow-xl">
+                <Upload className="mx-auto mb-2 h-6 w-6 text-emerald-400" />
+                <p className="text-sm font-medium text-zinc-100">
+                  松开通过 SCP 上传到 <span className="font-mono text-emerald-300">{detectedCwd}</span>
+                </p>
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  自动匹配当前终端路径（未报告路径时默认上传至 ~）
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Collapsible Right-Side SCP File Manager Drawer */}
+        {drawerOpen && (
+          <div className="h-full w-[420px] shrink-0 border-l border-white/[0.08] xl:w-[480px]">
+            <ScpFileManager host={host} endpointId={endpointId} initialPath={detectedCwd} compact />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

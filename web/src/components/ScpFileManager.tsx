@@ -24,10 +24,18 @@ import { formatBytes } from '../utils/format';
 interface ScpFileManagerProps {
   host: Host;
   endpointId?: string;
-  onOpenSsh: (host: Host) => void;
+  initialPath?: string;
+  compact?: boolean;
+  onOpenSsh?: (host: Host) => void;
 }
 
-export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId, onOpenSsh }) => {
+export const ScpFileManager: React.FC<ScpFileManagerProps> = ({
+  host,
+  endpointId,
+  initialPath,
+  compact = false,
+  onOpenSsh,
+}) => {
   const [currentPath, setCurrentPath] = useState('~');
   const [pathInput, setPathInput] = useState('~');
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -71,8 +79,8 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
   );
 
   useEffect(() => {
-    loadDir('~');
-  }, [loadDir]);
+    loadDir(initialPath || '~');
+  }, [loadDir, initialPath]);
 
   const handleGoUp = () => {
     if (currentPath === '/' || currentPath === '') return;
@@ -278,14 +286,16 @@ export const ScpFileManager: React.FC<ScpFileManagerProps> = ({ host, endpointId
             {uploading ? uploadStatus || 'SCP 上传中...' : 'SCP 上传（支持拖拽）'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => onOpenSsh(host)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-zinc-200 transition hover:bg-white/[0.08]"
-          >
-            <TerminalIcon className="h-3.5 w-3.5 text-emerald-400" />
-            SSH
-          </button>
+          {!compact && onOpenSsh && (
+            <button
+              type="button"
+              onClick={() => onOpenSsh(host)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-zinc-200 transition hover:bg-white/[0.08]"
+            >
+              <TerminalIcon className="h-3.5 w-3.5 text-emerald-400" />
+              SSH
+            </button>
+          )}
         </div>
       </div>
 
