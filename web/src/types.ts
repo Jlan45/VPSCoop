@@ -130,3 +130,22 @@ export interface TailscaleStatus {
   hostname: string;
   output?: string;
 }
+
+export interface CarrierRoute {
+  carrier: string;
+  target: string;
+  lineType: string;
+  latencyMs?: number;
+  hops: string[];
+}
+
+export interface NetworkReport {
+  ipv4: string;
+  ipv6: string;
+  country: string;
+  region: string;
+  city: string;
+  isp: string;
+  asn: string;
+  routes: CarrierRoute[];
+}

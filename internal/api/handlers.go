@@ -140,6 +140,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/hosts/{id}", s.requireInit(s.handleUpdateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.requireInit(s.handleDeleteHost))
 	mux.HandleFunc("POST /api/hosts/{id}/test", s.requireInit(s.handleTestHost))
+	mux.HandleFunc("POST /api/hosts/{id}/network-test", s.requireInit(s.handleNetworkTest))
 	mux.HandleFunc("POST /api/hosts/{id}/key-check", s.requireInit(s.handleCheckHostKey))
 	mux.HandleFunc("POST /api/hosts/{id}/key-inject", s.requireInit(s.handleInjectHostKey))
 
@@ -1602,4 +1603,36 @@ func (s *Server) requireMCPAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+
+func (s *Server) handleNetworkTest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	endpointID := r.URL.Query().Get("endpointId")
+	host, err := s.store.GetHostWithEndpoint(id, endpointID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "host not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	rep, err := sshclient.ProbeNetwork(host)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	// Auto-fill region if currently empty
+	if strings.TrimSpace(host.Region) == "" && rep.Country != "" {
+		loc := rep.Country
+		if rep.City != "" && rep.City != rep.Country {
+			loc = rep.City + ", " + rep.Country
+		}
+		_ = s.store.UpdateHostRegion(id, loc)
+	}
+
+	writeJSON(w, http.StatusOK, rep)
 }

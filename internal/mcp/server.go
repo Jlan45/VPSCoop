@@ -452,6 +452,21 @@ func NewSDKServer(st *store.Store) *sdkmcp.Server {
 		return textResult(jsonText(map[string]any{"status": status, "synced": synced}))
 	})
 
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "network_test",
+		Description: "Probe outbound IPv4/IPv6, Geo/ASN, and China 3-carrier route info (CN2 GIA, CN2 GT, 163, AS9929, AS4837, CMIN2) on a VPS host.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args hostIDArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
+		if err != nil {
+			return errResult(err.Error())
+		}
+		rep, err := sshclient.ProbeNetwork(host)
+		if err != nil {
+			return errResult(err.Error())
+		}
+		return textResult(jsonText(rep))
+	})
+
 	return s
 }
 

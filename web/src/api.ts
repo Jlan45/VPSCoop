@@ -1,4 +1,4 @@
-import type { FileEntry, Host, HostInput, Invoice, KeyCheckResult, SSHKey, TailscaleStatus } from './types';
+import type { FileEntry, Host, HostInput, Invoice, KeyCheckResult, NetworkReport, SSHKey, TailscaleStatus } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -76,6 +76,12 @@ export const api = {
   testHost: (id: string, endpointId?: string) =>
     request<{ ok: boolean; latencyMs: number; specs?: string }>(
       `/api/hosts/${id}/test${endpointId ? `?endpointId=${encodeURIComponent(endpointId)}` : ''}`,
+      { method: 'POST' }
+    ),
+
+  networkTest: (id: string, endpointId?: string) =>
+    request<NetworkReport>(
+      `/api/hosts/${id}/network-test${endpointId ? `?endpointId=${encodeURIComponent(endpointId)}` : ''}`,
       { method: 'POST' }
     ),
 

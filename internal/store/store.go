@@ -836,3 +836,10 @@ func (s *Store) UpdateHostSpecs(id, specs string) error {
 	_, err := s.db.Exec(`UPDATE hosts SET specs = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(specs), now, id)
 	return err
 }
+
+// UpdateHostRegion updates the region column for a host.
+func (s *Store) UpdateHostRegion(id, region string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(`UPDATE hosts SET region = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(region), now, id)
+	return err
+}

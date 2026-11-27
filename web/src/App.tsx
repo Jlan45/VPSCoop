@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Lock,
   Bot,
+  Route,
 } from 'lucide-react';
 import { api } from './api';
 import type { Host, HostEndpoint, HostInput, SSHKey, WorkspaceTab } from './types';
@@ -41,6 +42,7 @@ import { TailscaleModal } from './components/TailscaleModal';
 import { BackupModal } from './components/BackupModal';
 import { SetupScreen } from './components/SetupScreen';
 import { McpModal } from './components/McpModal';
+import { NetworkModal } from './components/NetworkModal';
 
 type MainSection = 'hosts' | 'keys' | 'billing';
 
@@ -71,6 +73,7 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [networkHost, setNetworkHost] = useState<Host | null>(null);
   const [mcpCopied, setMcpCopied] = useState(false);
 
   const handleQuickCopyMcp = async () => {
@@ -776,6 +779,14 @@ export default function App() {
                                 <div className="flex shrink-0 items-center gap-1">
                                   <button
                                     type="button"
+                                    onClick={() => setNetworkHost(h)}
+                                    className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-emerald-400"
+                                    title="IP 与三网链路探测 (CN2/9929/CMIN2)"
+                                  >
+                                    <Route className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => setTailscaleHost(h)}
                                     className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-sky-400"
                                     title="Tailscale 自动组网与 IP 同步"
@@ -1009,6 +1020,13 @@ export default function App() {
       />
 
       <McpModal open={mcpOpen} onClose={() => setMcpOpen(false)} />
+
+      <NetworkModal
+        open={Boolean(networkHost)}
+        host={networkHost}
+        onClose={() => setNetworkHost(null)}
+        onUpdated={fetchHosts}
+      />
     </div>
   );
 }
