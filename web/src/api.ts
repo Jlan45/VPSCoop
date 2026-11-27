@@ -401,4 +401,14 @@ export const api = {
     request<{ token: string }>('/api/settings/mcp/rotate', {
       method: 'POST',
     }),
+
+  getWorkspaceTabs: () =>
+    request<{ tabs: any[]; activeTabId: string }>('/api/workspace/tabs'),
+
+  saveWorkspaceTabs: (tabs: any[], activeTabId: string) =>
+    request<{ ok: boolean }>('/api/workspace/tabs', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabs, activeTabId }),
+    }),
 };

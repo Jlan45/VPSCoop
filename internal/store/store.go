@@ -874,3 +874,23 @@ func (s *Store) MergeHostTags(id string, newTags []string) ([]string, error) {
 	}
 	return merged, nil
 }
+
+// GetMeta reads a plaintext metadata value from the meta table.
+func (s *Store) GetMeta(key string) (string, error) {
+	var val string
+	err := s.db.QueryRow(`SELECT value FROM meta WHERE key = ?`, key).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return val, err
+}
+
+// SetMeta writes a plaintext metadata value into the meta table.
+func (s *Store) SetMeta(key, val string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO meta (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key, val,
+	)
+	return err
+}

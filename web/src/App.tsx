@@ -65,6 +65,7 @@ export default function App() {
   const [section, setSection] = useState<MainSection>('hosts');
   const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('main');
+  const tabsLoadedRef = useRef(false);
 
   const [search, setSearch] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
@@ -173,6 +174,30 @@ export default function App() {
     }
   }, []);
 
+  const fetchWorkspaceTabs = useCallback(async () => {
+    try {
+      const res = await api.getWorkspaceTabs();
+      if (Array.isArray(res.tabs)) {
+        setTabs(res.tabs);
+      }
+      if (res.activeTabId) {
+        setActiveTabId(res.activeTabId);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      tabsLoadedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!tabsLoadedRef.current) return;
+    const timer = window.setTimeout(() => {
+      api.saveWorkspaceTabs(tabs, activeTabId).catch(() => {});
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [tabs, activeTabId]);
+
   useEffect(() => {
     api
       .authStatus()
@@ -181,12 +206,13 @@ export default function App() {
         if (res.initialized && res.unlocked && res.authenticated) {
           fetchHosts();
           fetchKeys();
+          fetchWorkspaceTabs();
         }
       })
       .catch(() => {
         setAuthState({ initialized: true, unlocked: false, authenticated: false });
       });
-  }, [fetchHosts, fetchKeys]);
+  }, [fetchHosts, fetchKeys, fetchWorkspaceTabs]);
 
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -370,6 +396,7 @@ export default function App() {
           });
           fetchHosts();
           fetchKeys();
+          fetchWorkspaceTabs();
         }}
       />
     );

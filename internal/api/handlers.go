@@ -187,6 +187,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings/mcp", s.requireInit(s.handleGetMCPToken))
 	mux.HandleFunc("POST /api/settings/mcp/rotate", s.requireInit(s.handleRotateMCPToken))
 
+	mux.HandleFunc("GET /api/workspace/tabs", s.requireInit(s.handleGetWorkspaceTabs))
+	mux.HandleFunc("PUT /api/workspace/tabs", s.requireInit(s.handleSaveWorkspaceTabs))
+
 	mcpHandler := mcp.NewHTTPHandler(func() *store.Store {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
@@ -1646,4 +1649,51 @@ func (s *Server) handleNetworkTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, rep)
+}
+
+
+const workspaceTabsMetaKey = "workspace_tabs"
+
+func (s *Server) handleGetWorkspaceTabs(w http.ResponseWriter, r *http.Request) {
+	raw, err := s.store.GetMeta(workspaceTabsMetaKey)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if strings.TrimSpace(raw) == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"tabs":        []any{},
+			"activeTabId": "main",
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(raw))
+}
+
+func (s *Server) handleSaveWorkspaceTabs(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Tabs        json.RawMessage `json:"tabs"`
+		ActiveTabID string          `json:"activeTabId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		return
+	}
+	if len(body.Tabs) == 0 {
+		body.Tabs = json.RawMessage("[]")
+	}
+	if body.ActiveTabID == "" {
+		body.ActiveTabID = "main"
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"tabs":        body.Tabs,
+		"activeTabId": body.ActiveTabID,
+	})
+	if err := s.store.SetMeta(workspaceTabsMetaKey, string(payload)); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
