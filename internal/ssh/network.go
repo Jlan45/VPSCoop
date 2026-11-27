@@ -68,23 +68,36 @@ echo ""
 trace_target() {
   LABEL=$1
   IP=$2
-  echo "===ROUTE:$LABEL:$IP==="
-  ping -4 -c 2 -W 1 "$IP" 2>/dev/null | tail -n 2 || true
-  if command -v traceroute >/dev/null 2>&1; then
-    traceroute -n -m 16 -w 1 -q 1 "$IP" 2>/dev/null || true
-  elif command -v tracepath >/dev/null 2>&1; then
-    tracepath -n -m 16 "$IP" 2>/dev/null || true
-  else
-    for ttl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
-      ping -4 -n -c 1 -W 1 -t "$ttl" "$IP" 2>/dev/null | grep -E "From |from " || true
-    done
-  fi
+  OUT="/tmp/.vpsc_net_$$_${LABEL}"
+  {
+    echo "===ROUTE:$LABEL:$IP==="
+    ping -4 -c 2 -W 1 "$IP" 2>/dev/null | tail -n 2 || true
+    if command -v traceroute >/dev/null 2>&1; then
+      traceroute -n -m 16 -w 1 -q 1 "$IP" 2>/dev/null || true
+    elif command -v tracepath >/dev/null 2>&1; then
+      tracepath -n -m 16 "$IP" 2>/dev/null || true
+    else
+      for ttl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+        ping -4 -n -c 1 -W 1 -t "$ttl" "$IP" 2>/dev/null | grep -E "From |from " > "${OUT}_$ttl" &
+      done
+      wait
+      for ttl in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+        cat "${OUT}_$ttl" 2>/dev/null || true
+        rm -f "${OUT}_$ttl"
+      done
+    fi
+  } > "$OUT"
 }
 
 trace_target "CT" "202.96.209.133" &
 trace_target "CU" "210.22.97.1" &
 trace_target "CM" "211.136.112.200" &
 wait
+
+for L in CT CU CM; do
+  cat "/tmp/.vpsc_net_$$_${L}" 2>/dev/null || true
+  rm -f "/tmp/.vpsc_net_$$_${L}"
+done
 `
 
 	done := make(chan error, 1)
