@@ -48,9 +48,6 @@ export const BillingView: React.FC<BillingViewProps> = ({
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-100">账单与到期总览</h1>
-          <p className="mt-1 text-xs text-zinc-400">
-            按币种折算月度/年度开销，追踪即将到期的 VPS 主机
-          </p>
         </div>
 
         {/* Currency Summary Cards */}

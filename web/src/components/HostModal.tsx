@@ -124,7 +124,6 @@ export const HostModal: React.FC<HostModalProps> = ({ open, host, savedKeys, onC
               <h2 className="text-base font-semibold text-zinc-100">
                 {host ? `编辑主机 · ${host.name}` : '添加新 VPS 主机'}
               </h2>
-              <p className="text-xs text-zinc-500">配置 SSH 凭据、购买商信息与到期账单</p>
             </div>
           </div>
           <button
@@ -229,11 +228,7 @@ export const HostModal: React.FC<HostModalProps> = ({ open, host, savedKeys, onC
                   添加入口
                 </button>
               </div>
-              {(form.endpoints || []).length === 0 ? (
-                <p className="text-[11px] text-zinc-500">
-                  未添加备用入口；如需为同一台 VPS 配置 IPv6、中转节点或 Tailscale IP，可点击右侧添加。
-                </p>
-              ) : (
+              {(form.endpoints || []).length > 0 && (
                 <div className="space-y-2">
                   {(form.endpoints || []).map((ep, idx) => (
                     <div key={ep.id || idx} className="grid grid-cols-12 items-center gap-2">

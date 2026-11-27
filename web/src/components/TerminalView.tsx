@@ -375,9 +375,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
                 <p className="text-sm font-medium text-zinc-100">
                   松开通过 SCP 上传到 <span className="font-mono text-emerald-300">{detectedCwd}</span>
                 </p>
-                <p className="mt-1 text-[11px] text-zinc-400">
-                  自动匹配当前终端路径（未报告路径时默认上传至 ~）
-                </p>
               </div>
             </div>
           )}

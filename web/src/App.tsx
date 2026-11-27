@@ -700,9 +700,6 @@ export default function App() {
                       <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
                         我的 VPS 主机库
                       </h1>
-                      <p className="mt-1 text-xs text-zinc-400">
-                        一键在线 SSH 终端、基于 SCP 的文件管理，以及购买商/费用/到期提醒
-                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -775,7 +772,7 @@ export default function App() {
                         ref={searchInputRef}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="搜索名称、IP、购买商、地区、#CN2-GIA... (Ctrl+K)"
+                        placeholder="搜索主机、IP、购买商、标签... (Ctrl+K)"
                         className="w-full rounded-xl border border-white/[0.08] bg-[#111114] py-2 pl-9 pr-3 text-xs text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-emerald-500/50"
                       />
                     </div>

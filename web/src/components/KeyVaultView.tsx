@@ -182,9 +182,6 @@ export const KeyVaultView: React.FC<KeyVaultViewProps> = ({ keys, onRefresh }) =
             <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
               密钥管理 (Keychain)
             </h1>
-            <p className="mt-1 text-xs text-zinc-400">
-              参考 Termius Keychain 设计：统一管理密钥名称、类型、公钥与加密私钥，支持一键生成密钥对
-            </p>
           </div>
           <button
             type="button"
@@ -315,9 +312,8 @@ export const KeyVaultView: React.FC<KeyVaultViewProps> = ({ keys, onRefresh }) =
                   </div>
                 </div>
 
-                {/* Footer: One-click Deploy */}
-                <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
-                  <span className="text-[11px] text-zinc-500">快速部署到服务器：</span>
+                {/* Quick Deploy */}
+                <div className="mt-4 flex items-center justify-end border-t border-white/[0.06] pt-3">
                   <button
                     type="button"
                     onClick={() => copyDeployCmd(k)}
@@ -355,9 +351,6 @@ export const KeyVaultView: React.FC<KeyVaultViewProps> = ({ keys, onRefresh }) =
                   <h2 className="text-base font-semibold text-zinc-100">
                     {editingKey ? `编辑密钥 · ${editingKey.name}` : '添加或生成 SSH 密钥'}
                   </h2>
-                  <p className="text-xs text-zinc-500">
-                    管理密钥名称、密钥类型、公钥与私钥
-                  </p>
                 </div>
               </div>
               <button
