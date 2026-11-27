@@ -65,7 +65,8 @@ WantedBy=multi-user.target
 EOF
 
   sudo systemctl daemon-reload
-  sudo systemctl enable --now vpscoop.service
+  sudo systemctl enable vpscoop.service
+  sudo systemctl restart vpscoop.service
   echo "==> VPSCoop is running! Access http://localhost${ADDR}"
 else
   mkdir -p "$DATA_DIR"
