@@ -387,4 +387,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename, passphrase: passphrase || '' }),
     }),
+
+  getMCPToken: () =>
+    request<{ token: string; fromEnv: boolean }>('/api/settings/mcp'),
+
+  rotateMCPToken: () =>
+    request<{ token: string }>('/api/settings/mcp/rotate', {
+      method: 'POST',
+    }),
 };

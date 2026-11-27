@@ -59,7 +59,7 @@ func main() {
 		if st == nil {
 			log.Fatalf("VPSCoop is locked or uninitialized; set VPSCOOP_MASTER_KEY (or VPSCOOP_SECRET_KEY) in env")
 		}
-		if err := mcp.NewServer(st).ServeStdio(); err != nil {
+		if err := mcp.ServeStdio(st); err != nil {
 			log.Fatalf("mcp server error: %v", err)
 		}
 		return

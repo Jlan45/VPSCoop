@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"vpscoop/internal/crypto"
 	"vpscoop/internal/importer"
 	"vpscoop/internal/keys"
+	"vpscoop/internal/mcp"
 	"vpscoop/internal/scp"
 	sshclient "vpscoop/internal/ssh"
 	"vpscoop/internal/store"
@@ -179,6 +181,16 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cloud/webdav/files", s.requireInit(s.handleListWebDAV))
 	mux.HandleFunc("POST /api/cloud/webdav/push", s.requireInit(s.handlePushWebDAV))
 	mux.HandleFunc("POST /api/cloud/webdav/pull", s.requireInit(s.handlePullWebDAV))
+
+	mux.HandleFunc("GET /api/settings/mcp", s.requireInit(s.handleGetMCPToken))
+	mux.HandleFunc("POST /api/settings/mcp/rotate", s.requireInit(s.handleRotateMCPToken))
+
+	mcpHandler := mcp.NewHTTPHandler(func() *store.Store {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.store
+	})
+	mux.Handle("/mcp", s.requireMCPAuth(mcpHandler))
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
@@ -1497,4 +1509,87 @@ func (s *Server) handleAuthLock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	s.clearSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "authenticated": false})
+}
+
+
+const mcpTokenSetting = "mcp_auth_token"
+
+func (s *Server) ensureMCPToken() (string, error) {
+	if envTok := strings.TrimSpace(os.Getenv("VPSCOOP_MCP_TOKEN")); envTok != "" {
+		return envTok, nil
+	}
+	tok, err := s.store.GetSetting(mcpTokenSetting)
+	if err != nil {
+		return "", err
+	}
+	if tok == "" {
+		b := make([]byte, 24)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		tok = "vpsc_" + hex.EncodeToString(b)
+		if err := s.store.SetSetting(mcpTokenSetting, tok); err != nil {
+			return "", err
+		}
+	}
+	return tok, nil
+}
+
+func (s *Server) handleGetMCPToken(w http.ResponseWriter, r *http.Request) {
+	tok, err := s.ensureMCPToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":   tok,
+		"fromEnv": strings.TrimSpace(os.Getenv("VPSCOOP_MCP_TOKEN")) != "",
+	})
+}
+
+func (s *Server) handleRotateMCPToken(w http.ResponseWriter, r *http.Request) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tok := "vpsc_" + hex.EncodeToString(b)
+	if err := s.store.SetSetting(mcpTokenSetting, tok); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"token": tok})
+}
+
+func (s *Server) requireMCPAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.RLock()
+		st := s.store
+		s.mu.RUnlock()
+		if st == nil {
+			writeError(w, http.StatusLocked, "panel is locked; unlock web UI or set VPSCOOP_MASTER_KEY")
+			return
+		}
+
+		expected, err := s.ensureMCPToken()
+		if err != nil || expected == "" {
+			writeError(w, http.StatusInternalServerError, "mcp token unavailable")
+			return
+		}
+
+		authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+		var provided string
+		if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+			provided = strings.TrimSpace(authHeader[7:])
+		} else if xKey := strings.TrimSpace(r.Header.Get("X-API-Key")); xKey != "" {
+			provided = xKey
+		}
+
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="vpscoop-mcp"`)
+			writeError(w, http.StatusUnauthorized, "invalid or missing Authorization Bearer token")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

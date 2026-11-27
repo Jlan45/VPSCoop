@@ -1,14 +1,15 @@
 package mcp
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"net/http"
 	"strings"
 	"time"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"vpscoop/internal/keys"
 	"vpscoop/internal/scp"
@@ -17,342 +18,62 @@ import (
 	"vpscoop/internal/tailscale"
 )
 
-type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type rpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
-	Result  any             `json:"result,omitempty"`
-	Error   *rpcError       `json:"error,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type toolDef struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
-}
-
-// Server implements a Model Context Protocol (MCP) stdio server for VPSCoop.
-type Server struct {
-	store *store.Store
-}
-
-// NewServer creates an MCP Server backed by st.
-func NewServer(st *store.Store) *Server {
-	return &Server{store: st}
-}
-
-// ServeStdio reads JSON-RPC requests from stdin and writes responses to stdout.
-func (s *Server) ServeStdio() error {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-
-	enc := json.NewEncoder(os.Stdout)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var req rpcRequest
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			continue
-		}
-		// Notifications (no ID) do not expect a response
-		if len(req.ID) == 0 || string(req.ID) == "null" {
-			continue
-		}
-
-		resp := s.handleRequest(req)
-		if err := enc.Encode(resp); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
-}
-
-func (s *Server) handleRequest(req rpcRequest) rpcResponse {
-	switch req.Method {
-	case "initialize":
-		return rpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result: map[string]any{
-				"protocolVersion": "2024-11-05",
-				"capabilities": map[string]any{
-					"tools": map[string]any{},
-				},
-				"serverInfo": map[string]any{
-					"name":    "vpscoop-mcp",
-					"version": "1.0.0",
-				},
-			},
-		}
-	case "ping":
-		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}
-	case "tools/list":
-		return rpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  map[string]any{"tools": s.tools()},
-		}
-	case "tools/call":
-		var params struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return rpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Error:   &rpcError{Code: -32602, Message: "invalid tools/call params"},
-			}
-		}
-		text, isErr := s.callTool(params.Name, params.Arguments)
-		return rpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result: map[string]any{
-				"content": []map[string]any{
-					{"type": "text", "text": text},
-				},
-				"isError": isErr,
-			},
-		}
-	default:
-		return rpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Error:   &rpcError{Code: -32601, Message: "method not found: " + req.Method},
-		}
-	}
-}
-
-func (s *Server) tools() []toolDef {
-	return []toolDef{
-		{
-			Name:        "list_hosts",
-			Description: "List all VPS hosts managed by VPSCoop (includes provider, region, cost, billingCycle, expiresAt, specs, tags; secrets are redacted).",
-			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
-		},
-		{
-			Name:        "list_expiring_hosts",
-			Description: "List VPS hosts that are expired or expiring within a given number of days.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"withinDays": map[string]any{"type": "integer", "description": "Days threshold (default 30)"},
-				},
-			},
-		},
-		{
-			Name:        "add_host",
-			Description: "Add a new VPS host to VPSCoop.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name":         map[string]any{"type": "string"},
-					"host":         map[string]any{"type": "string", "description": "IP or domain"},
-					"port":         map[string]any{"type": "integer", "description": "SSH port (default 22)"},
-					"username":     map[string]any{"type": "string", "description": "SSH user (default root)"},
-					"authType":     map[string]any{"type": "string", "enum": []string{"password", "key"}},
-					"keyId":        map[string]any{"type": "string", "description": "Optional Key Vault ID when authType=key"},
-					"password":     map[string]any{"type": "string"},
-					"provider":     map[string]any{"type": "string"},
-					"region":       map[string]any{"type": "string"},
-					"groupName":    map[string]any{"type": "string"},
-					"cost":         map[string]any{"type": "number"},
-					"currency":     map[string]any{"type": "string", "description": "USD, CNY, EUR, GBP, JPY"},
-					"billingCycle": map[string]any{"type": "string", "description": "monthly, quarterly, semiannual, annual, biennial, triennial, onetime"},
-					"expiresAt":    map[string]any{"type": "string", "description": "YYYY-MM-DD"},
-					"specs":        map[string]any{"type": "string"},
-					"notes":        map[string]any{"type": "string"},
-				},
-				"required": []string{"name", "host"},
-			},
-		},
-		{
-			Name:        "delete_host",
-			Description: "Delete a VPS host by its ID.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId": map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId"},
-			},
-		},
-		{
-			Name:        "test_host_ssh",
-			Description: "Test SSH connectivity to a VPS host and measure connection latency in ms.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId": map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId"},
-			},
-		},
-		{
-			Name:        "ssh_exec",
-			Description: "Execute a shell command on a VPS host via SSH and return stdout, stderr, and exit status.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId":  map[string]any{"type": "string"},
-					"command": map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId", "command"},
-			},
-		},
-		{
-			Name:        "scp_list",
-			Description: "List files and directories at a remote path on a VPS host.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId": map[string]any{"type": "string"},
-					"path":   map[string]any{"type": "string", "description": "Remote directory path (default ~)"},
-				},
-				"required": []string{"hostId"},
-			},
-		},
-		{
-			Name:        "scp_read_file",
-			Description: "Read a remote text file (up to 512KB) from a VPS host via SCP.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId": map[string]any{"type": "string"},
-					"path":   map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId", "path"},
-			},
-		},
-		{
-			Name:        "scp_write_file",
-			Description: "Write or overwrite a remote text file on a VPS host via SCP.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId":   map[string]any{"type": "string"},
-					"dir":      map[string]any{"type": "string"},
-					"filename": map[string]any{"type": "string"},
-					"content":  map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId", "dir", "filename", "content"},
-			},
-		},
-		{
-			Name:        "list_keys",
-			Description: "List all SSH keys stored in the VPSCoop Key Vault.",
-			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
-		},
-		{
-			Name:        "generate_key",
-			Description: "Generate a new Ed25519 or RSA-4096 SSH keypair and save it in the Key Vault.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name":       map[string]any{"type": "string"},
-					"algorithm":  map[string]any{"type": "string", "enum": []string{"ed25519", "ecdsa-p256", "ecdsa-p384", "ecdsa-p521", "rsa-2048", "rsa-3072", "rsa-4096"}},
-					"comment":    map[string]any{"type": "string"},
-					"passphrase": map[string]any{"type": "string"},
-				},
-				"required": []string{"name"},
-			},
-		},
-		{
-			Name:        "check_host_key",
-			Description: "Check if a Key Vault SSH key is present in remote ~/.ssh/authorized_keys and verify key-based SSH login.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId": map[string]any{"type": "string"},
-					"keyId":  map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId", "keyId"},
-			},
-		},
-		{
-			Name:        "inject_host_key",
-			Description: "Automatically inject a Key Vault public key into remote ~/.ssh/authorized_keys, verify key login, and optionally switch host auth to that key.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId":         map[string]any{"type": "string"},
-					"keyId":          map[string]any{"type": "string"},
-					"switchHostAuth": map[string]any{"type": "boolean", "description": "Switch host auth to this key if login succeeds (default true)"},
-				},
-				"required": []string{"hostId", "keyId"},
-			},
-		},
-		{
-			Name:        "tailscale_check",
-			Description: "Check if Tailscale is installed/running on a VPS host and auto-sync its 100.x IP as a Tailscale endpoint.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId": map[string]any{"type": "string"},
-				},
-				"required": []string{"hostId"},
-			},
-		},
-		{
-			Name:        "tailscale_inject",
-			Description: "Install Tailscale (if missing), join the tailnet using an authKey (or saved default), and auto-add its 100.x IP as a Tailscale endpoint.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"hostId":    map[string]any{"type": "string"},
-					"authKey":   map[string]any{"type": "string", "description": "Optional tskey-auth-... (uses saved key if omitted)"},
-					"hostname":  map[string]any{"type": "string"},
-					"enableSSH": map[string]any{"type": "boolean"},
-				},
-				"required": []string{"hostId"},
-			},
-		},
-	}
-}
-
 func jsonText(v any) string {
 	b, _ := json.MarshalIndent(v, "", "  ")
 	return string(b)
 }
 
-func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
-	if len(rawArgs) == 0 {
-		rawArgs = []byte("{}")
+func textResult(text string) (*sdkmcp.CallToolResult, any, error) {
+	return &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: text},
+		},
+	}, nil, nil
+}
+
+func errResult(msg string) (*sdkmcp.CallToolResult, any, error) {
+	return &sdkmcp.CallToolResult{
+		IsError: true,
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: msg},
+		},
+	}, nil, nil
+}
+
+// NewSDKServer builds an official MCP SDK Server wired with all VPSCoop tools.
+func NewSDKServer(st *store.Store) *sdkmcp.Server {
+	s := sdkmcp.NewServer(&sdkmcp.Implementation{
+		Name:    "vpscoop-mcp",
+		Version: "1.0.0",
+	}, nil)
+
+	type emptyArgs struct{}
+
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "list_hosts",
+		Description: "List all VPS hosts managed by VPSCoop (includes provider, region, cost, billingCycle, expiresAt, specs, tags; secrets are redacted).",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, _ emptyArgs) (*sdkmcp.CallToolResult, any, error) {
+		hosts, err := st.ListHosts()
+		if err != nil {
+			return errResult(err.Error())
+		}
+		return textResult(jsonText(hosts))
+	})
+
+	type expiringArgs struct {
+		WithinDays int `json:"withinDays,omitempty" jsonschema:"Days threshold (default 30)"`
 	}
-
-	switch name {
-	case "list_hosts":
-		hosts, err := s.store.ListHosts()
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "list_expiring_hosts",
+		Description: "List VPS hosts that are expired or expiring within a given number of days.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args expiringArgs) (*sdkmcp.CallToolResult, any, error) {
+		daysThreshold := args.WithinDays
+		if daysThreshold <= 0 {
+			daysThreshold = 30
+		}
+		hosts, err := st.ListHosts()
 		if err != nil {
-			return err.Error(), true
-		}
-		return jsonText(hosts), false
-
-	case "list_expiring_hosts":
-		var args struct {
-			WithinDays int `json:"withinDays"`
-		}
-		_ = json.Unmarshal(rawArgs, &args)
-		if args.WithinDays <= 0 {
-			args.WithinDays = 30
-		}
-		hosts, err := s.store.ListHosts()
-		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		now := time.Now()
 		type expItem struct {
@@ -369,79 +90,120 @@ func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
 				continue
 			}
 			days := int(t.Sub(now).Hours()/24) + 1
-			if days <= args.WithinDays {
+			if days <= daysThreshold {
 				out = append(out, expItem{Host: h, DaysLeft: days})
 			}
 		}
-		return jsonText(out), false
+		return textResult(jsonText(out))
+	})
 
-	case "add_host":
-		var in store.HostInput
-		if err := json.Unmarshal(rawArgs, &in); err != nil {
-			return err.Error(), true
+	type addHostArgs struct {
+		Name         string  `json:"name" jsonschema:"Display name of the VPS"`
+		Host         string  `json:"host" jsonschema:"IP address or domain"`
+		Port         int     `json:"port,omitempty" jsonschema:"SSH port (default 22)"`
+		Username     string  `json:"username,omitempty" jsonschema:"SSH user (default root)"`
+		AuthType     string  `json:"authType,omitempty" jsonschema:"password or key"`
+		KeyID        string  `json:"keyId,omitempty" jsonschema:"Optional Key Vault ID when authType=key"`
+		Password     string  `json:"password,omitempty"`
+		Provider     string  `json:"provider,omitempty"`
+		Region       string  `json:"region,omitempty"`
+		GroupName    string  `json:"groupName,omitempty"`
+		Cost         float64 `json:"cost,omitempty"`
+		Currency     string  `json:"currency,omitempty" jsonschema:"USD, CNY, EUR, GBP, JPY"`
+		BillingCycle string  `json:"billingCycle,omitempty" jsonschema:"monthly, quarterly, semiannual, annual, biennial, triennial, onetime"`
+		ExpiresAt    string  `json:"expiresAt,omitempty" jsonschema:"YYYY-MM-DD"`
+		Specs        string  `json:"specs,omitempty"`
+		Notes        string  `json:"notes,omitempty"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "add_host",
+		Description: "Add a new VPS host to VPSCoop.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args addHostArgs) (*sdkmcp.CallToolResult, any, error) {
+		if strings.TrimSpace(args.Name) == "" || strings.TrimSpace(args.Host) == "" {
+			return errResult("name and host are required")
 		}
-		if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Host) == "" {
-			return "name and host are required", true
-		}
-		created, err := s.store.CreateHost(in)
+		created, err := st.CreateHost(store.HostInput{
+			Name:         args.Name,
+			Host:         args.Host,
+			Port:         args.Port,
+			Username:     args.Username,
+			AuthType:     args.AuthType,
+			KeyID:        args.KeyID,
+			Password:     args.Password,
+			Provider:     args.Provider,
+			Region:       args.Region,
+			GroupName:    args.GroupName,
+			Cost:         args.Cost,
+			Currency:     args.Currency,
+			BillingCycle: args.BillingCycle,
+			ExpiresAt:    args.ExpiresAt,
+			Specs:        args.Specs,
+			Notes:        args.Notes,
+		})
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return jsonText(created), false
+		return textResult(jsonText(created))
+	})
 
-	case "delete_host":
-		var args struct {
-			HostID string `json:"hostId"`
+	type hostIDArgs struct {
+		HostID string `json:"hostId" jsonschema:"Host ID"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "delete_host",
+		Description: "Delete a VPS host by its ID.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args hostIDArgs) (*sdkmcp.CallToolResult, any, error) {
+		if args.HostID == "" {
+			return errResult("hostId is required")
 		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" {
-			return "hostId is required", true
+		if err := st.DeleteHost(args.HostID); err != nil {
+			return errResult(err.Error())
 		}
-		if err := s.store.DeleteHost(args.HostID); err != nil {
-			return err.Error(), true
-		}
-		return `{"ok":true}`, false
+		return textResult(`{"ok":true}`)
+	})
 
-	case "test_host_ssh":
-		var args struct {
-			HostID string `json:"hostId"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" {
-			return "hostId is required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "test_host_ssh",
+		Description: "Test SSH connectivity to a VPS host and measure connection latency in ms.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args hostIDArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		start := time.Now()
 		client, err := sshclient.Dial(host)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		_ = client.Close()
-		s.store.TouchLastConnected(args.HostID)
-		return jsonText(map[string]any{"ok": true, "latencyMs": time.Since(start).Milliseconds()}), false
+		st.TouchLastConnected(args.HostID)
+		return textResult(jsonText(map[string]any{"ok": true, "latencyMs": time.Since(start).Milliseconds()}))
+	})
 
-	case "ssh_exec":
-		var args struct {
-			HostID  string `json:"hostId"`
-			Command string `json:"command"`
+	type sshExecArgs struct {
+		HostID  string `json:"hostId" jsonschema:"Host ID"`
+		Command string `json:"command" jsonschema:"Shell command to execute"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "ssh_exec",
+		Description: "Execute a shell command on a VPS host via SSH and return stdout, stderr, and exit status.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args sshExecArgs) (*sdkmcp.CallToolResult, any, error) {
+		if args.HostID == "" || args.Command == "" {
+			return errResult("hostId and command are required")
 		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" || args.Command == "" {
-			return "hostId and command are required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		client, err := sshclient.Dial(host)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		defer client.Close()
 
 		session, err := client.NewSession()
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		defer session.Close()
 
@@ -449,7 +211,7 @@ func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
 		session.Stdout = &stdout
 		session.Stderr = &stderr
 		runErr := session.Run(args.Command)
-		s.store.TouchLastConnected(args.HostID)
+		st.TouchLastConnected(args.HostID)
 
 		res := map[string]any{
 			"stdout": stdout.String(),
@@ -458,148 +220,161 @@ func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
 		}
 		if runErr != nil {
 			res["error"] = runErr.Error()
+			return &sdkmcp.CallToolResult{
+				IsError: true,
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: jsonText(res)}},
+			}, nil, nil
 		}
-		return jsonText(res), runErr != nil
+		return textResult(jsonText(res))
+	})
 
-	case "scp_list":
-		var args struct {
-			HostID string `json:"hostId"`
-			Path   string `json:"path"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" {
-			return "hostId is required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	type scpListArgs struct {
+		HostID string `json:"hostId" jsonschema:"Host ID"`
+		Path   string `json:"path,omitempty" jsonschema:"Remote directory path (default ~)"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "scp_list",
+		Description: "List files and directories at a remote path on a VPS host.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args scpListArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		client, err := sshclient.Dial(host)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		defer client.Close()
 
 		entries, resolved, err := scp.ListDir(client, args.Path)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return jsonText(map[string]any{"path": resolved, "entries": entries}), false
+		return textResult(jsonText(map[string]any{"path": resolved, "entries": entries}))
+	})
 
-	case "scp_read_file":
-		var args struct {
-			HostID string `json:"hostId"`
-			Path   string `json:"path"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" || args.Path == "" {
-			return "hostId and path are required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	type scpReadArgs struct {
+		HostID string `json:"hostId" jsonschema:"Host ID"`
+		Path   string `json:"path" jsonschema:"Remote file path"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "scp_read_file",
+		Description: "Read a remote text file (up to 512KB) from a VPS host via SCP.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args scpReadArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		client, err := sshclient.Dial(host)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		defer client.Close()
 
 		content, err := scp.ReadFileText(client, args.Path, 512*1024)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return content, false
+		return textResult(content)
+	})
 
-	case "scp_write_file":
-		var args struct {
-			HostID   string `json:"hostId"`
-			Dir      string `json:"dir"`
-			Filename string `json:"filename"`
-			Content  string `json:"content"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" || args.Dir == "" || args.Filename == "" {
-			return "hostId, dir, and filename are required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	type scpWriteArgs struct {
+		HostID   string `json:"hostId" jsonschema:"Host ID"`
+		Dir      string `json:"dir" jsonschema:"Remote directory"`
+		Filename string `json:"filename" jsonschema:"File name"`
+		Content  string `json:"content" jsonschema:"Text content to write"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "scp_write_file",
+		Description: "Write or overwrite a remote text file on a VPS host via SCP.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args scpWriteArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		client, err := sshclient.Dial(host)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		defer client.Close()
 
 		data := []byte(args.Content)
 		if err := scp.Upload(client, args.Dir, args.Filename, int64(len(data)), bytes.NewReader(data)); err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return `{"ok":true}`, false
+		return textResult(`{"ok":true}`)
+	})
 
-	case "list_keys":
-		list, err := s.store.ListKeys()
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "list_keys",
+		Description: "List all SSH keys stored in the VPSCoop Key Vault.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, _ emptyArgs) (*sdkmcp.CallToolResult, any, error) {
+		list, err := st.ListKeys()
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return jsonText(list), false
+		return textResult(jsonText(list))
+	})
 
-	case "generate_key":
-		var args struct {
-			Name       string `json:"name"`
-			Algorithm  string `json:"algorithm"`
-			Comment    string `json:"comment"`
-			Passphrase string `json:"passphrase"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || strings.TrimSpace(args.Name) == "" {
-			return "name is required", true
+	type genKeyArgs struct {
+		Name       string `json:"name" jsonschema:"Key name"`
+		Algorithm  string `json:"algorithm,omitempty" jsonschema:"ed25519, ecdsa-p256, ecdsa-p384, ecdsa-p521, rsa-2048, rsa-3072, rsa-4096"`
+		Comment    string `json:"comment,omitempty"`
+		Passphrase string `json:"passphrase,omitempty"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "generate_key",
+		Description: "Generate a new SSH keypair and save it in the Key Vault.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args genKeyArgs) (*sdkmcp.CallToolResult, any, error) {
+		if strings.TrimSpace(args.Name) == "" {
+			return errResult("name is required")
 		}
 		gen, err := keys.Generate(args.Algorithm, args.Comment, args.Passphrase)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		created, err := s.store.CreateKey(args.Name, gen.Algorithm, gen.PublicKey, gen.PrivateKey, args.Passphrase, gen.Fingerprint, args.Comment)
+		created, err := st.CreateKey(args.Name, gen.Algorithm, gen.PublicKey, gen.PrivateKey, args.Passphrase, gen.Fingerprint, args.Comment)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return jsonText(created), false
+		return textResult(jsonText(created))
+	})
 
-	case "check_host_key":
-		var args struct {
-			HostID string `json:"hostId"`
-			KeyID  string `json:"keyId"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" || args.KeyID == "" {
-			return "hostId and keyId are required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	type keyOpArgs struct {
+		HostID         string `json:"hostId" jsonschema:"Host ID"`
+		KeyID          string `json:"keyId" jsonschema:"Key Vault ID"`
+		SwitchHostAuth *bool  `json:"switchHostAuth,omitempty" jsonschema:"Switch host auth to this key if login succeeds (default true)"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "check_host_key",
+		Description: "Check if a Key Vault SSH key is present in remote ~/.ssh/authorized_keys and verify key-based SSH login.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args keyOpArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		key, err := s.store.GetKeyWithSecret(args.KeyID)
+		key, err := st.GetKeyWithSecret(args.KeyID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		return jsonText(keys.CheckOnHost(host, key)), false
+		return textResult(jsonText(keys.CheckOnHost(host, key)))
+	})
 
-	case "inject_host_key":
-		var args struct {
-			HostID         string `json:"hostId"`
-			KeyID          string `json:"keyId"`
-			SwitchHostAuth *bool  `json:"switchHostAuth"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" || args.KeyID == "" {
-			return "hostId and keyId are required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "inject_host_key",
+		Description: "Automatically inject a Key Vault public key into remote ~/.ssh/authorized_keys, verify key login, and optionally switch host auth to that key.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args keyOpArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
-		key, err := s.store.GetKeyWithSecret(args.KeyID)
+		key, err := st.GetKeyWithSecret(args.KeyID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		res, err := keys.InjectOnHost(host, key)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		shouldSwitch := true
 		if args.SwitchHostAuth != nil {
@@ -607,30 +382,28 @@ func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
 		}
 		switched := false
 		if shouldSwitch && res.AuthWorks {
-			if err := s.store.SetHostKeyAuth(args.HostID, key.ID); err == nil {
+			if err := st.SetHostKeyAuth(args.HostID, key.ID); err == nil {
 				switched = true
 			}
 		}
-		return jsonText(map[string]any{"result": res, "switched": switched}), false
+		return textResult(jsonText(map[string]any{"result": res, "switched": switched}))
+	})
 
-	case "tailscale_check":
-		var args struct {
-			HostID string `json:"hostId"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" {
-			return "hostId is required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "tailscale_check",
+		Description: "Check if Tailscale is installed/running on a VPS host and auto-sync its 100.x IP as a Tailscale endpoint.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args hostIDArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		status, err := tailscale.CheckStatus(host)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		synced := false
 		if status.Running && status.TailscaleIP != "" {
-			if _, err := s.store.UpsertHostEndpoint(args.HostID, store.HostEndpoint{
+			if _, err := st.UpsertHostEndpoint(args.HostID, store.HostEndpoint{
 				Label: "Tailscale",
 				Host:  status.TailscaleIP,
 				Port:  host.Port,
@@ -638,36 +411,37 @@ func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
 				synced = true
 			}
 		}
-		return jsonText(map[string]any{"status": status, "synced": synced}), false
+		return textResult(jsonText(map[string]any{"status": status, "synced": synced}))
+	})
 
-	case "tailscale_inject":
-		var args struct {
-			HostID    string `json:"hostId"`
-			AuthKey   string `json:"authKey"`
-			Hostname  string `json:"hostname"`
-			EnableSSH bool   `json:"enableSSH"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil || args.HostID == "" {
-			return "hostId is required", true
-		}
-		host, err := s.store.GetHostWithSecrets(args.HostID)
+	type tailscaleInjectArgs struct {
+		HostID    string `json:"hostId" jsonschema:"Host ID"`
+		AuthKey   string `json:"authKey,omitempty" jsonschema:"Optional tskey-auth-... (uses saved key if omitted)"`
+		Hostname  string `json:"hostname,omitempty"`
+		EnableSSH bool   `json:"enableSSH,omitempty"`
+	}
+	sdkmcp.AddTool(s, &sdkmcp.Tool{
+		Name:        "tailscale_inject",
+		Description: "Install Tailscale (if missing), join the tailnet using an authKey (or saved default), and auto-add its 100.x IP as a Tailscale endpoint.",
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args tailscaleInjectArgs) (*sdkmcp.CallToolResult, any, error) {
+		host, err := st.GetHostWithSecrets(args.HostID)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		authKey := strings.TrimSpace(args.AuthKey)
 		if authKey == "" {
-			authKey, _ = s.store.GetSetting("tailscale_auth_key")
+			authKey, _ = st.GetSetting("tailscale_auth_key")
 		}
 		if authKey == "" {
-			return "authKey is required (none saved)", true
+			return errResult("authKey is required (none saved)")
 		}
 		status, err := tailscale.InstallAndUp(host, authKey, args.Hostname, args.EnableSSH)
 		if err != nil {
-			return err.Error(), true
+			return errResult(err.Error())
 		}
 		synced := false
 		if status.TailscaleIP != "" {
-			if _, err := s.store.UpsertHostEndpoint(args.HostID, store.HostEndpoint{
+			if _, err := st.UpsertHostEndpoint(args.HostID, store.HostEndpoint{
 				Label: "Tailscale",
 				Host:  status.TailscaleIP,
 				Port:  host.Port,
@@ -675,12 +449,26 @@ func (s *Server) callTool(name string, rawArgs json.RawMessage) (string, bool) {
 				synced = true
 			}
 		}
-		return jsonText(map[string]any{"status": status, "synced": synced}), false
+		return textResult(jsonText(map[string]any{"status": status, "synced": synced}))
+	})
 
-	default:
-		return fmt.Sprintf("unknown tool %q", name), true
-	}
+	return s
 }
 
-// Keep io import referenced cleanly if needed
-var _ = io.EOF
+// ServeStdio runs the MCP server over stdin/stdout using the official Go MCP SDK.
+func ServeStdio(st *store.Store) error {
+	return NewSDKServer(st).Run(context.Background(), &sdkmcp.StdioTransport{})
+}
+
+// NewHTTPHandler returns a Streamable HTTP MCP handler backed by the active store.
+func NewHTTPHandler(getStore func() *store.Store) http.Handler {
+	return sdkmcp.NewStreamableHTTPHandler(func(r *http.Request) *sdkmcp.Server {
+		st := getStore()
+		if st == nil {
+			return nil
+		}
+		return NewSDKServer(st)
+	}, nil)
+}
+
+var _ = fmt.Sprintf

@@ -24,6 +24,7 @@ import {
   Network,
   ShieldCheck,
   Lock,
+  Bot,
 } from 'lucide-react';
 import { api } from './api';
 import type { Host, HostEndpoint, HostInput, SSHKey, WorkspaceTab } from './types';
@@ -39,6 +40,7 @@ import { ImportModal } from './components/ImportModal';
 import { TailscaleModal } from './components/TailscaleModal';
 import { BackupModal } from './components/BackupModal';
 import { SetupScreen } from './components/SetupScreen';
+import { McpModal } from './components/McpModal';
 
 type MainSection = 'hosts' | 'keys' | 'billing';
 
@@ -68,6 +70,7 @@ export default function App() {
   const [tailscaleHost, setTailscaleHost] = useState<Host | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = window.localStorage.getItem('vpscoop-theme');
@@ -402,6 +405,15 @@ export default function App() {
           >
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
             加密备份 / 恢复
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMcpOpen(true)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-200"
+          >
+            <Bot className="h-4 w-4 text-sky-400" />
+            HTTP MCP 接口
           </button>
 
           <button
@@ -933,6 +945,8 @@ export default function App() {
           await fetchKeys();
         }}
       />
+
+      <McpModal open={mcpOpen} onClose={() => setMcpOpen(false)} />
     </div>
   );
 }
