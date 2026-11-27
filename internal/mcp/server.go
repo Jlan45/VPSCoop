@@ -468,7 +468,9 @@ func NewHTTPHandler(getStore func() *store.Store) http.Handler {
 			return nil
 		}
 		return NewSDKServer(st)
-	}, nil)
+	}, &sdkmcp.StreamableHTTPOptions{
+		DisableLocalhostProtection: true,
+	})
 }
 
 var _ = fmt.Sprintf
