@@ -310,6 +310,10 @@ export default function App() {
 
   const closeTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const closing = tabs.find((t) => t.id === tabId);
+    if (closing?.kind === 'ssh') {
+      api.closeSshSession(tabId).catch(() => {});
+    }
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
       if (activeTabId === tabId) {
@@ -1208,6 +1212,7 @@ export default function App() {
                   {tab.kind === 'ssh' ? (
                     <TerminalView
                       host={host}
+                      sessionId={tab.id}
                       endpointId={tab.endpointId}
                       endpointLabel={tab.endpointLabel}
                       active={isActive}

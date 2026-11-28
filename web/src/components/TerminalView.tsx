@@ -17,6 +17,7 @@ import { ScpFileManager } from './ScpFileManager';
 
 interface TerminalViewProps {
   host: Host;
+  sessionId?: string;
   endpointId?: string;
   endpointLabel?: string;
   active: boolean;
@@ -74,6 +75,7 @@ const LIGHT_TERM_THEME = {
 
 export const TerminalView: React.FC<TerminalViewProps> = ({
   host,
+  sessionId,
   endpointId,
   endpointLabel,
   active,
@@ -133,7 +135,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const epQuery = endpointId ? `&endpointId=${encodeURIComponent(endpointId)}` : '';
-    const wsUrl = `${proto}//${window.location.host}/api/ws/ssh/${host.id}?cols=${term.cols}&rows=${term.rows}${epQuery}`;
+    const sidQuery = sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : '';
+    const wsUrl = `${proto}//${window.location.host}/api/ws/ssh/${host.id}?cols=${term.cols}&rows=${term.rows}${epQuery}${sidQuery}`;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
@@ -196,7 +199,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       ws.close();
       term.dispose();
     };
-  }, [host.id, endpointId, connectSeq]);
+  }, [host.id, sessionId, endpointId, connectSeq]);
 
   useEffect(() => {
     if (active && fitRef.current && termRef.current) {
@@ -308,9 +311,14 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setConnectSeq((s) => s + 1)}
+            onClick={async () => {
+              if (sessionId) {
+                await api.closeSshSession(sessionId).catch(() => {});
+              }
+              setConnectSeq((s) => s + 1);
+            }}
             className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-white/[0.08]"
-            title="重新连接"
+            title="断开并重新连接"
           >
             <RotateCw className="h-3.5 w-3.5 text-emerald-400" />
             重连

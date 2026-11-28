@@ -411,4 +411,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tabs, activeTabId }),
     }),
+
+  closeSshSession: (sessionId: string) =>
+    request<{ ok: boolean }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    }),
 };

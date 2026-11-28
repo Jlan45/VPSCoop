@@ -42,13 +42,19 @@ type Server struct {
 	store         *store.Store
 	dataDir       string
 	sessionSecret []byte
+	sshMgr        *sshclient.Manager
 }
 
 // NewServer creates an API Server backed by s and storing uploaded files under dataDir.
 func NewServer(s *store.Store, dataDir string) *Server {
 	sec := make([]byte, 32)
 	_, _ = rand.Read(sec)
-	return &Server{store: s, dataDir: dataDir, sessionSecret: sec}
+	return &Server{
+		store:         s,
+		dataDir:       dataDir,
+		sessionSecret: sec,
+		sshMgr:        sshclient.NewManager(),
+	}
 }
 
 const sessionCookieName = "vpscoop_session"
@@ -146,6 +152,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/hosts/{id}/key-inject", s.requireInit(s.handleInjectHostKey))
 
 	mux.HandleFunc("GET /api/ws/ssh/{id}", s.requireInit(s.handleSSHTerminal))
+	mux.HandleFunc("DELETE /api/ssh/sessions/{sessionId}", s.requireInit(s.handleCloseSSHSession))
 
 	mux.HandleFunc("GET /api/scp/{id}/list", s.requireInit(s.handleSCPList))
 	mux.HandleFunc("GET /api/scp/{id}/download", s.requireInit(s.handleSCPDownload))
@@ -321,6 +328,10 @@ func (s *Server) handleTestHost(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	endpointID := r.URL.Query().Get("endpointId")
+	sessionID := r.URL.Query().Get("sessionId")
+	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
+	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
+
 	host, err := s.store.GetHostWithEndpoint(id, endpointID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "host not found")
@@ -330,9 +341,20 @@ func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	sshclient.HandleTerminalWS(w, r, host, func() {
+
+	conn, err := sshclient.Upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	s.sshMgr.ServeWS(conn, sessionID, host, cols, rows, func() {
 		s.store.TouchLastConnected(id)
 	})
+}
+
+func (s *Server) handleCloseSSHSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionId")
+	s.sshMgr.CloseSession(sessionID)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) dialForSCP(w http.ResponseWriter, r *http.Request, id string) (store.HostWithSecrets, func(), bool) {
@@ -1510,6 +1532,7 @@ func (s *Server) handleAuthUnlock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuthLock(w http.ResponseWriter, r *http.Request) {
+	s.sshMgr.CloseAll()
 	s.mu.Lock()
 	if s.store != nil {
 		_ = s.store.Close()

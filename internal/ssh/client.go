@@ -17,7 +17,8 @@ import (
 	"vpscoop/internal/store"
 )
 
-var upgrader = websocket.Upgrader{
+// Upgrader upgrades HTTP connections to WebSocket for SSH terminal streaming.
+var Upgrader = websocket.Upgrader{
 	ReadBufferSize:  8192,
 	WriteBufferSize: 8192,
 	CheckOrigin: func(r *http.Request) bool {
@@ -106,7 +107,7 @@ type wsControlMsg struct {
 
 // HandleTerminalWS upgrades the HTTP connection to a WebSocket and bridges it to an interactive SSH PTY.
 func HandleTerminalWS(w http.ResponseWriter, r *http.Request, host store.HostWithSecrets, onConnect func()) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
