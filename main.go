@@ -80,6 +80,9 @@ func main() {
 			cleanPath := strings.TrimPrefix(r.URL.Path, "/")
 			if cleanPath != "" {
 				if _, err := fs.Stat(subFS, cleanPath); err == nil {
+					if cleanPath == "sw.js" {
+						w.Header().Set("Cache-Control", "no-cache")
+					}
 					fileServer.ServeHTTP(w, r)
 					return
 				}
