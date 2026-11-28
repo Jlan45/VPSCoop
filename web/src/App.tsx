@@ -29,6 +29,7 @@ import {
   LayoutGrid,
   List,
   Menu,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { api } from './api';
 import type { Currency, Host, HostEndpoint, HostInput, SSHKey, WorkspaceTab } from './types';
@@ -47,6 +48,7 @@ const TailscaleModal = lazy(() => import('./components/TailscaleModal').then((m)
 const BackupModal = lazy(() => import('./components/BackupModal').then((m) => ({ default: m.BackupModal })));
 const McpModal = lazy(() => import('./components/McpModal').then((m) => ({ default: m.McpModal })));
 const NetworkModal = lazy(() => import('./components/NetworkModal').then((m) => ({ default: m.NetworkModal })));
+const UpgradeModal = lazy(() => import('./components/UpgradeModal').then((m) => ({ default: m.UpgradeModal })));
 
 type MainSection = 'hosts' | 'keys' | 'billing';
 
@@ -79,6 +81,8 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeInfo, setUpgradeInfo] = useState<any>(null);
   const [networkHost, setNetworkHost] = useState<Host | null>(null);
   const [mcpCopied, setMcpCopied] = useState(false);
 
@@ -207,6 +211,7 @@ export default function App() {
           fetchHosts();
           fetchKeys();
           fetchWorkspaceTabs();
+          api.checkUpgrade().then(setUpgradeInfo).catch(() => {});
         }
       })
       .catch(() => {
@@ -430,9 +435,17 @@ export default function App() {
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-semibold tracking-tight text-zinc-100">VPSCoop</span>
                 {authState.version && (
-                  <span className="rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+                  <button
+                    type="button"
+                    onClick={() => setUpgradeOpen(true)}
+                    title="检查版本更新"
+                    className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-zinc-400 transition hover:border-emerald-500/40 hover:text-emerald-300"
+                  >
                     {authState.version}
-                  </span>
+                    {upgradeInfo?.hasUpdate && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    )}
+                  </button>
                 )}
               </div>
               <div className="text-[10px] text-zinc-500">SSH · SCP · Vault</div>
@@ -543,6 +556,22 @@ export default function App() {
           >
             <Bot className="h-4 w-4 text-sky-400" />
             HTTP MCP 接口
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setUpgradeOpen(true)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-200"
+          >
+            <span className="flex items-center gap-2.5">
+              <ArrowUpCircle className="h-4 w-4 text-emerald-400" />
+              版本与升级
+            </span>
+            {upgradeInfo?.hasUpdate && (
+              <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300">
+                {upgradeInfo.latestVersion}
+              </span>
+            )}
           </button>
 
           <button
@@ -1280,6 +1309,13 @@ export default function App() {
         />
 
         <McpModal open={mcpOpen} onClose={() => setMcpOpen(false)} />
+
+        <UpgradeModal
+          open={upgradeOpen}
+          initialInfo={upgradeInfo}
+          onClose={() => setUpgradeOpen(false)}
+          onInfoUpdated={setUpgradeInfo}
+        />
 
         <NetworkModal
           open={Boolean(networkHost)}

@@ -43,6 +43,12 @@ type Server struct {
 	dataDir       string
 	sessionSecret []byte
 	sshMgr        *sshclient.Manager
+	onRestart     func(execPath string)
+}
+
+// SetRestartHandler registers a callback invoked after an in-place binary upgrade.
+func (s *Server) SetRestartHandler(fn func(execPath string)) {
+	s.onRestart = fn
 }
 
 // NewServer creates an API Server backed by s and storing uploaded files under dataDir.
@@ -193,6 +199,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /api/settings/mcp", s.requireInit(s.handleGetMCPToken))
 	mux.HandleFunc("POST /api/settings/mcp/rotate", s.requireInit(s.handleRotateMCPToken))
+
+	mux.HandleFunc("GET /api/system/upgrade/check", s.requireInit(s.handleUpgradeCheck))
+	mux.HandleFunc("POST /api/system/upgrade/apply", s.requireInit(s.handleUpgradeApply))
 
 	mux.HandleFunc("GET /api/workspace/tabs", s.requireInit(s.handleGetWorkspaceTabs))
 	mux.HandleFunc("PUT /api/workspace/tabs", s.requireInit(s.handleSaveWorkspaceTabs))

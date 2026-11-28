@@ -416,4 +416,29 @@ export const api = {
     request<{ ok: boolean }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
     }),
+
+  checkUpgrade: () =>
+    request<{
+      currentVersion: string;
+      latestVersion: string;
+      hasUpdate: boolean;
+      releaseName: string;
+      releaseNotes: string;
+      publishedAt: string;
+      htmlUrl: string;
+      assetName: string;
+      downloadUrl: string;
+      assetSize: number;
+      canSelfUpdate: boolean;
+      reason?: string;
+      execPath: string;
+      repo: string;
+    }>('/api/system/upgrade/check'),
+
+  applyUpgrade: (force = false) =>
+    request<{ ok: boolean; version: string; restarting: boolean }>('/api/system/upgrade/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    }),
 };

@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/base64"
 	"embed"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"vpscoop/internal/api"
 	"vpscoop/internal/crypto"
@@ -99,8 +101,22 @@ func main() {
 	if addr == "" {
 		addr = ":8090"
 	}
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	srv.SetRestartHandler(func(execPath string) {
+		_ = httpServer.Close()
+		if os.Getenv("INVOCATION_ID") != "" {
+			os.Exit(0)
+		}
+		if err := syscall.Exec(execPath, os.Args, os.Environ()); err != nil {
+			log.Printf("exec upgraded binary failed: %v", err)
+			os.Exit(1)
+		}
+	})
 	log.Printf("VPSCoop server listening on http://localhost%s (data: %s)", addr, dataDir)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}
 }
