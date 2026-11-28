@@ -82,6 +82,8 @@ func main() {
 				if _, err := fs.Stat(subFS, cleanPath); err == nil {
 					if cleanPath == "sw.js" {
 						w.Header().Set("Cache-Control", "no-cache")
+					} else if cleanPath == "manifest.webmanifest" {
+						w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
 					}
 					fileServer.ServeHTTP(w, r)
 					return
